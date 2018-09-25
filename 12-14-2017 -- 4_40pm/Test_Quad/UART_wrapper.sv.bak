@@ -1,0 +1,124 @@
+//NAMES: Samuel Rinartz & Adam Weintraut
+module UART_wrapper(RX, TX, cmd, data, resp, clr_cmd_rdy, cmd_rdy, send_resp, resp_sent, clk, rst_n);
+
+//code inputs and outputs
+input clr_cmd_rdy, RX, send_resp, clk, rst_n;
+input [7:0] resp;
+output logic cmd_rdy, resp_sent, TX;
+output logic [7:0] cmd;
+output logic [15:0] data;
+
+//other intermediates
+logic clr_rdy;
+logic rdy;
+logic [7:0] rx_data;
+logic [7:0] topEight;
+logic [7:0] midEight;
+logic [7:0] cmdRegister;
+logic cmdMux;
+logic dataMux;
+logic set_cmd_rdy;
+logic clr_cmd_rdy_fsm;
+
+UART_tx iTX(.clk(clk),.rst_n(rst_n),.TX(TX),.trmt(send_resp),.tx_data(resp),.tx_done(resp_sent));
+
+UART_rcv iRCV(.clk(clk),.rst_n(rst_n),.RX(RX),.rdy(rdy),.rx_data(rx_data),.clr_rdy(clr_rdy));
+
+//TODO UART WRAPPER SM, this can be found in the HW1 you submitted
+typedef enum { NONE, ONE, FULL } UART_FSM;
+UART_FSM state, nxt_state;
+
+always@(posedge clk, negedge rst_n)begin
+	if(!rst_n)
+		state <= NONE;
+	else
+		state <= nxt_state;
+end
+
+always_comb begin
+	//default statemachine values
+	cmdMux = 1'b1;
+	dataMux = 1'b1;
+	clr_rdy = 1'b0;
+	clr_cmd_rdy_fsm = 1'b0;
+	set_cmd_rdy = 1'b0;
+	//case states
+	case(state)
+		NONE:begin
+			if(rdy)begin
+				clr_rdy = 1'b1;
+				cmdMux = 1'b0;
+				nxt_state = ONE;
+				clr_cmd_rdy_fsm = 1'b1;
+			end
+			else begin
+				cmdMux = 1'b1;
+				dataMux = 1'b1;
+				nxt_state = NONE;
+			end
+		end
+	
+		ONE:begin
+			if(rdy)begin
+				clr_rdy = 1'b1;
+				dataMux = 1'b0;
+				nxt_state = FULL;
+			end
+			else
+				nxt_state = ONE;
+		end
+
+		FULL:begin
+			if(rdy)begin
+				nxt_state = NONE;
+				set_cmd_rdy = 1'b1;
+				clr_rdy = 1'b1;
+			end
+			else begin
+				nxt_state = FULL;
+			end
+		end
+	endcase
+	
+end
+
+always@(posedge clk, negedge rst_n)begin
+	if(!rst_n) 
+		cmd_rdy <= 0;
+	else if(clr_cmd_rdy || clr_cmd_rdy_fsm)
+		cmd_rdy <= 0;
+	else if(set_cmd_rdy)
+		cmd_rdy <= 1;
+	else
+		cmd_rdy <= cmd_rdy;
+
+end
+
+//FF for cmd
+always@(posedge clk, negedge rst_n)begin
+	if(!rst_n)
+		topEight <= 0;
+	else if(!cmdMux) 
+		topEight <= rx_data;
+	else
+		topEight <= topEight;
+
+end
+
+//FF for MS data bits
+always@(posedge clk, negedge rst_n)begin
+	if(!rst_n)
+		midEight <= 0;
+	else if(!dataMux)
+		midEight <= rx_data;
+	else
+		midEight <= midEight;
+
+end
+
+
+
+assign cmd = topEight;
+assign data = {midEight[7:0], rx_data[7:0]};
+
+endmodule

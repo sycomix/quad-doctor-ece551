@@ -1,0 +1,67 @@
+read_file -format sverilog { QuadCopter.v UART_wrapper.sv rst_synch.sv UART_tx.v UART_rcv.sv cmd_cfg.sv inert_intf.sv SPI_mstr16.sv inertial_integrator.sv flght_cntrl.sv A2D_Intf.sv ESCs.sv ESC_interface.sv }
+################################
+##set QuadCopter to top level##
+##############################
+set current_design QuadCopter
+
+############################
+###Hierarchy check#########
+###########################
+link
+
+###########################
+#Define clock ############
+###########################
+create_clock -name "clk" -period 2.5 -waveform { 0 1.25 } { clk }
+set_dont_touch_network [find port clk]
+
+#setup pointer to all inputers other than clk#
+set prim_inputs [remove_from_collection [all_inputs] [find port clk] ]
+
+#############################
+#Set input delay and drive #
+############################
+set_input_delay -clock clk .25 [ copy_collection $prim_inputs ] 
+set_driving_cell -lib_cell ND2D2BWP -pin Z -from_pin A1 -library tcbn40lpbwptc [ copy_collection $prim_inputs ]
+
+#############################
+#Set output delay ##########
+############################
+set_output_delay -clock clk .5 [ all_outputs ] 
+set_load 0.10 [ all_outputs ]
+
+##############################
+#Set the load model #########
+#############################
+set_wire_load_model -name TSMC32K_Lowk_Conservative -library tcbn40lpbwptc
+
+##############################
+#Set max transition time ####
+#############################
+set_max_transition 0.10 [ current_design ]
+
+###############################
+#Set clock uncertainty ######
+##############################
+set_clock_uncertainty .15 clk
+#################################
+#Synthesize for the first time #
+################################
+compile -map_effort medium
+
+###############################
+#Smash hierarchy ##############
+##############################
+ungroup -all -flatten
+
+set_fix_hold clk
+
+compile -map_effort high
+
+report_area > QuadCopterArea.txt
+###############################
+#Write final netlist #########
+##############################
+write -format verilog QuadCopter -output Quadcopter.vg
+
+
